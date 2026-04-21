@@ -3,6 +3,8 @@ import json
 from flask import Flask, request
 import requests
 
+print("STARTING: app.py loaded")  # <- эта строка должна быть в логах
+
 app = Flask(__name__)
 
 TOKEN1 = os.environ.get('BOT_TOKEN_1')
@@ -19,11 +21,12 @@ def send_message(chat_id, text, token, reply_markup=None):
         payload['reply_markup'] = json.dumps(reply_markup)
     try:
         r = requests.post(url, json=payload, timeout=5)
-        print(f"Send to {chat_id}: {r.status_code} {r.text[:100]}")
+        print(f"Send to {chat_id}: {r.status_code}")
     except Exception as e:
         print(f"Send error: {e}")
 
 def process_update(update, token, bot_num):
+    print(f"Bot {bot_num} process_update called")  # <- важный лог
     if not update:
         print(f"Bot {bot_num}: empty update")
         return
@@ -59,16 +62,19 @@ def process_update(update, token, bot_num):
 
 @app.route('/webhook/1', methods=['POST'])
 def webhook1():
+    print("Webhook 1 called")
     process_update(request.get_json(), TOKEN1, 1)
     return 'OK', 200
 
 @app.route('/webhook/2', methods=['POST'])
 def webhook2():
+    print("Webhook 2 called")
     process_update(request.get_json(), TOKEN2, 2)
     return 'OK', 200
 
 @app.route('/webhook/3', methods=['POST'])
 def webhook3():
+    print("Webhook 3 called")
     process_update(request.get_json(), TOKEN3, 3)
     return 'OK', 200
 
@@ -87,4 +93,5 @@ def health():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    print(f"Starting Flask on port {port}")
     app.run(host='0.0.0.0', port=port)
