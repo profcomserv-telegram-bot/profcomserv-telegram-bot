@@ -3,9 +3,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = "8684012503:AAHcBc1ggVUGEHv7dY1M-YcGIuxviWwTLh0"
-OPERATOR_ID = int(os.environ.get("OPERATOR_ID", 7137220733))  # твой ID
+OPERATOR_ID = int(os.environ.get("OPERATOR_ID", 7137220733))
 
-active_chats = {}  # user_id: True
+active_chats = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📞 Связаться с оператором", callback_data="operator")]]
@@ -49,7 +49,6 @@ async def forward_to_operator(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("✉️ Отправлено оператору. Ожидайте ответа.")
 
 async def forward_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Эта функция вызывается только для сообщений от оператора
     if update.effective_user.id != OPERATOR_ID:
         return
     if not update.message or not update.message.text:
