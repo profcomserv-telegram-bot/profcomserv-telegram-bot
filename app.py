@@ -1,12 +1,17 @@
 import os
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "8684012503:AAHcBc1ggVUGEHv7dY1M-YcGIuxviWwTLh0"
+# Токены берутся из окружения, но можно указать прямо (не рекомендуется)
+TOKEN_1 = os.environ.get("BOT_TOKEN_1", "8684012503:AAHcBc1ggVUGEHv7dY1M-YcGIuxviWwTLh0")
+TOKEN_2 = os.environ.get("BOT_TOKEN_2", "8223022364:AAEu31BylYStpxHxg06yyW_JY2NX32WgEPo")
+TOKEN_3 = os.environ.get("BOT_TOKEN_3", "8764025967:AAFS_kgxV6y9Zcg3THrrG-JNb6nErL3KrA4")
 OPERATOR_ID = int(os.environ.get("OPERATOR_ID", 7137220733))
 
-active_chats = {}
+active_chats = {}  # user_id: True
 
+# ---- Общие обработчики (для всех ботов) ----
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📞 Связаться с оператором", callback_data="operator")]]
     await update.message.reply_text(
@@ -49,7 +54,6 @@ async def forward_to_operator(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("✉️ Отправлено оператору. Ожидайте ответа.")
 
 async def forward_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Проверяем, что сообщение пришло от оператора
     if update.effective_user.id != OPERATOR_ID:
         return
     if not update.message or not update.message.text:
@@ -67,17 +71,22 @@ async def forward_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(target_user_id, f"👨‍💼 Оператор: {reply_text}")
     await update.message.reply_text(f"✅ Ответ отправлен пользователю {target_user_id}")
 
-def main():
-    app = Application.builder().token(TOKEN).build()
+def create_bot_app(token: str):
+    app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("operator", operator_cmd))
     app.add_handler(CommandHandler("end", end_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_operator))
-    # ИСПРАВЛЕННАЯ СТРОКА:
     app.add_handler(MessageHandler(filters.User(user_id=OPERATOR_ID) & filters.TEXT, forward_to_user))
-    print("Бот с оператором запущен...")
-    app.run_polling()
+    return app
+
+async def run_bots():
+    tokens = [TOKEN_1, TOKEN_2, TOKEN_3]
+    apps = [create_bot_app(token) for token in tokens if token]
+    tasks = [app.run_polling() for app in apps]
+    await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
-    main()
+    print("Запуск трёх ботов...")
+    asyncio.run(run_bots())
