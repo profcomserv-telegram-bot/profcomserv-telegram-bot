@@ -1,20 +1,19 @@
 import os
 import asyncio
-import threading
-from flask import Flask
+from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ---------- 1. КОНФИГУРАЦИЯ ----------
-TOKEN_1 = os.environ.get("BOT_TOKEN_1", "8684012503:AAHcBc1ggVUGEHv7dY1M-YcGIuxviWwTLh0")
-TOKEN_2 = os.environ.get("BOT_TOKEN_2", "8223022364:AAEu31BylYStpxHxg06yyW_JY2NX32WgEPo")
-TOKEN_3 = os.environ.get("BOT_TOKEN_3", "8764025967:AAFS_kgxV6y9Zcg3THrrG-JNb6nErL3KrA4")
+# Токены только из переменных окружения (без fallback)
+TOKEN_1 = os.environ["BOT_TOKEN_1"]
+TOKEN_2 = os.environ["BOT_TOKEN_2"]
+TOKEN_3 = os.environ["BOT_TOKEN_3"]
 OPERATOR_ID = int(os.environ.get("OPERATOR_ID", 7137220733))
-PORT = int(os.environ.get("PORT", 10000))
+PORT = int(os.environ.get("PORT", 8000))
 
 active_chats = {}
 
-# ---------- 2. ЛОГИКА БОТОВ ----------
+# Обработчики (без изменений)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📞 Связаться с оператором", callback_data="operator")]]
     await update.message.reply_text(
@@ -84,32 +83,29 @@ def create_bot_app(token: str):
     app.add_handler(MessageHandler(filters.User(user_id=OPERATOR_ID) & filters.TEXT, forward_to_user))
     return app
 
-def run_bots():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+async def run_bots():
     tokens = [TOKEN_1, TOKEN_2, TOKEN_3]
-    apps = [create_bot_app(token) for token in tokens if token]
+    apps = [create_bot_app(token) for token in tokens]
     tasks = [app.run_polling() for app in apps]
-    loop.run_until_complete(asyncio.gather(*tasks))
+    await asyncio.gather(*tasks)
 
-# ---------- 3. HTTP-СЕРВЕР ДЛЯ RENDER ----------
-flask_app = Flask(__name__)
+async def health_check(request):
+    return web.Response(text="OK")
 
-@flask_app.route('/health')
-def health():
-    return "OK", 200
+async def start_http_server():
+    app = web.Application()
+    app.router.add_get('/health', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    print(f"HTTP сервер запущен на порту {PORT}")
 
-@flask_app.route('/')
-def index():
-    return "Bot is running", 200
+async def main():
+    print("Запуск HTTP-сервера и трёх ботов...")
+    http_task = asyncio.create_task(start_http_server())
+    bots_task = asyncio.create_task(run_bots())
+    await asyncio.gather(http_task, bots_task)
 
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=PORT, threaded=True)
-
-# ---------- 4. ЗАПУСК ----------
 if __name__ == "__main__":
-    print(f"Запуск HTTP-сервера на порту {PORT}...")
-    flask_thread = threading.Thread(target=run_flask, daemon=False)
-    flask_thread.start()
-    print("Запуск ботов...")
-    run_bots()
+    asyncio.run(main())
