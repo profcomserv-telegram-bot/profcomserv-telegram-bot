@@ -4,6 +4,8 @@ from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+print("STARTING SCRIPT...")
+
 app = Flask(__name__)
 TOKEN = "8684012503:AAHcBc1ggVUGEHv7dY1M-YcGIuxviWwTLh0"
 
@@ -23,12 +25,12 @@ def run_flask():
     app.run(host='0.0.0.0', port=port, use_reloader=False, threaded=True)
 
 if __name__ == '__main__':
-    # Запускаем Flask в отдельном потоке (не daemon, чтобы он не убился)
+    print("Запускаем Flask в потоке...")
     flask_thread = threading.Thread(target=run_flask, daemon=False)
     flask_thread.start()
     
-    # Запускаем бота в главном потоке
+    print("Запускаем бота...")
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    print("Бот запускается...")
+    print("Бот запускается (run_polling)...")
     application.run_polling()
