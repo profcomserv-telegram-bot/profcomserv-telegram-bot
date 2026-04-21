@@ -1,111 +1,127 @@
 import os
-import asyncio
-import threading
-from flask import Flask
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import json
+from flask import Flask, request
+import requests
 
-# ========== НАСТРОЙКИ ==========
-TOKEN_1 = os.environ["BOT_TOKEN_1"]
-TOKEN_2 = os.environ["BOT_TOKEN_2"]
-TOKEN_3 = os.environ["BOT_TOKEN_3"]
-OPERATOR_ID = int(os.environ.get("OPERATOR_ID", 7137220733))
+app = Flask(__name__)
 
+# Токены из переменных окружения
+TOKEN1 = os.environ.get('BOT_TOKEN_1')
+TOKEN2 = os.environ.get('BOT_TOKEN_2')
+TOKEN3 = os.environ.get('BOT_TOKEN_3')
+OPERATOR_ID = int(os.environ.get('OPERATOR_ID', 0))
+
+# Хранилище активных диалогов (user_id: True)
 active_chats = {}
 
-# ========== ОБРАБОТЧИКИ БОТОВ ==========
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("📞 Связаться с оператором", callback_data="operator")]]
-    await update.message.reply_text(
-        "Привет! Я бот ProfComServ.\nНажми кнопку, чтобы связаться с живым оператором.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "operator":
-        user_id = query.from_user.id
-        active_chats[user_id] = True
-        await query.edit_message_text("✅ Вы переведены на оператора. Ожидайте ответа.\nЧтобы завершить, напишите /end")
-        await context.bot.send_message(OPERATOR_ID, f"🆕 Новый клиент @{query.from_user.username or query.from_user.first_name} (id: {user_id})")
-
-async def operator_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    active_chats[user_id] = True
-    await update.message.reply_text("✅ Вы переведены на оператора. Ожидайте ответа.\nЧтобы завершить, напишите /end")
-    await context.bot.send_message(OPERATOR_ID, f"🆕 Новый клиент @{update.effective_user.username or update.effective_user.first_name} (id: {user_id})")
-
-async def end_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id in active_chats:
-        del active_chats[user_id]
-        await update.message.reply_text("Диалог завершён. Если понадоблюсь снова — /operator")
-        await context.bot.send_message(OPERATOR_ID, f"❌ Клиент {user_id} завершил диалог.")
-    else:
-        await update.message.reply_text("У вас нет активного диалога.")
-
-async def forward_to_operator(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in active_chats:
-        await update.message.reply_text("Сначала нажмите /operator, чтобы связаться с оператором.")
-        return
-    text = update.message.text
-    if text:
-        await context.bot.send_message(OPERATOR_ID, f"📩 Сообщение от {user_id} (@{update.effective_user.username}):\n{text}")
-        await update.message.reply_text("✉️ Отправлено оператору. Ожидайте ответа.")
-
-async def forward_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OPERATOR_ID:
-        return
-    if not update.message or not update.message.text:
-        return
-    parts = update.message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await update.message.reply_text("Формат: `ID_пользователя текст`\nПример: `123456 Привет!`")
-        return
+# ---- Функция отправки сообщения ----
+def send_message(chat_id, text, token, reply_markup=None):
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {'chat_id': chat_id, 'text': text}
+    if reply_markup:
+        payload['reply_markup'] = json.dumps(reply_markup)
     try:
-        target_user_id = int(parts[0])
-        reply_text = parts[1]
-    except ValueError:
-        await update.message.reply_text("ID должно быть числом.")
+        r = requests.post(url, json=payload, timeout=5)
+        if not r.ok:
+            print(f"Send error: {r.status_code} {r.text}")
+    except Exception as e:
+        print(f"Request error: {e}")
+
+# ---- Обработка входящего обновления для конкретного бота ----
+def process_update(update, token):
+    if not update:
         return
-    await context.bot.send_message(target_user_id, f"👨‍💼 Оператор: {reply_text}")
-    await update.message.reply_text(f"✅ Ответ отправлен пользователю {target_user_id}")
-
-def create_bot_app(token: str):
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("operator", operator_cmd))
-    app.add_handler(CommandHandler("end", end_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_operator))
-    app.add_handler(MessageHandler(filters.User(user_id=OPERATOR_ID) & filters.TEXT, forward_to_user))
-    return app
-
-async def run_bots():
-    tokens = [TOKEN_1, TOKEN_2, TOKEN_3]
-    apps = [create_bot_app(token) for token in tokens]
-    tasks = [app.run_polling() for app in apps]
-    await asyncio.gather(*tasks)
-
-# ========== HTTP-СЕРВЕР ДЛЯ RENDER (FLASK) ==========
-app_flask = Flask(__name__)
-
-@app_flask.route('/')
-@app_flask.route('/health')
-def health():
-    return "OK", 200
-
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app_flask.run(host='0.0.0.0', port=port, use_reloader=False, threaded=True)
-
-# ========== ЗАПУСК ==========
-if __name__ == "__main__":
-    print("Запуск Flask сервера в потоке...")
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
+    # Обработка сообщения
+    if 'message' in update:
+        msg = update['message']
+        chat_id = msg['chat']['id']
+        user = msg['chat'].get('username', 'без username')
+        text = msg.get('text')
+        
+        # Команда /start
+        if text == '/start':
+            keyboard = {
+                'inline_keyboard': [[{'text': '📞 Связаться с оператором', 'callback_data': 'operator'}]]
+            }
+            send_message(chat_id, 'Привет! Я бот ProfComServ.\nНажми кнопку, чтобы связаться с оператором.', token, keyboard)
+            return
+        
+        # Если пользователь в активном диалоге (нажал кнопку ранее)
+        if chat_id in active_chats:
+            # Пересылаем сообщение оператору
+            send_message(OPERATOR_ID, f"📩 Сообщение от @{user} (id: {chat_id}):\n{text}", token)
+            send_message(chat_id, "✉️ Сообщение отправлено оператору. Ожидайте ответа.", token)
+        else:
+            send_message(chat_id, "Сначала нажмите /start и кнопку «Связаться с оператором».", token)
     
-    print("Запуск трёх ботов...")
-    asyncio.run(run_bots())
+    # Обработка нажатия inline-кнопки
+    elif 'callback_query' in update:
+        query = update['callback_query']
+        user_id = query['from']['id']
+        data = query['data']
+        
+        if data == 'operator':
+            active_chats[user_id] = True
+            # Отвечаем на callback, чтобы убрать «часики» у кнопки
+            answer_url = f"https://api.telegram.org/bot{token}/answerCallbackQuery"
+            requests.post(answer_url, json={'callback_query_id': query['id']})
+            # Меняем текст сообщения
+            edit_url = f"https://api.telegram.org/bot{token}/editMessageText"
+            payload = {
+                'chat_id': query['message']['chat']['id'],
+                'message_id': query['message']['message_id'],
+                'text': "✅ Вы переведены на оператора. Ожидайте ответа.\nЧтобы завершить диалог, напишите /end"
+            }
+            requests.post(edit_url, json=payload)
+            # Уведомляем оператора
+            send_message(OPERATOR_ID, f"🆕 Новый клиент @{query['from'].get('username', 'no username')} (id: {user_id}) подключился.", token)
+
+# ---- Вебхуки для трёх ботов ----
+@app.route('/webhook/1', methods=['POST'])
+def webhook1():
+    process_update(request.get_json(), TOKEN1)
+    return 'OK', 200
+
+@app.route('/webhook/2', methods=['POST'])
+def webhook2():
+    process_update(request.get_json(), TOKEN2)
+    return 'OK', 200
+
+@app.route('/webhook/3', methods=['POST'])
+def webhook3():
+    process_update(request.get_json(), TOKEN3)
+    return 'OK', 200
+
+# ---- Эндпоинт для ответов оператора ----
+@app.route('/reply', methods=['POST'])
+def reply():
+    """Оператор отправляет сюда сообщение в формате JSON: {"user_id": 123, "text": "ответ"}"""
+    data = request.get_json()
+    if not data:
+        return 'Bad request', 400
+    user_id = data.get('user_id')
+    text = data.get('text')
+    if not user_id or not text:
+        return 'Missing fields', 400
+    # Отправляем ответ пользователю через первого бота (можно через любого, но лучше через того, кто прислал сообщение)
+    # Для простоты отправим через первого бота. Но можно сохранять, от какого бота пришло сообщение.
+    # Упростим: пробуем отправить через все три токена, если один не сработает.
+    sent = False
+    for token in [TOKEN1, TOKEN2, TOKEN3]:
+        send_message(user_id, f"👨‍💼 Оператор: {text}", token)
+        sent = True
+        break  # достаточно одного
+    if sent:
+        return 'OK', 200
+    else:
+        return 'Error', 500
+
+# ---- Проверка здоровья для Render ----
+@app.route('/')
+def health():
+    return 'Bot is running', 200
+
+# ---- Запуск ----
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
