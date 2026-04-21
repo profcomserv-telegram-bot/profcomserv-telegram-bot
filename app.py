@@ -1,19 +1,19 @@
 import os
 import asyncio
-from aiohttp import web
+import threading
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# Токены только из переменных окружения (без fallback)
+# ========== НАСТРОЙКИ ==========
 TOKEN_1 = os.environ["BOT_TOKEN_1"]
 TOKEN_2 = os.environ["BOT_TOKEN_2"]
 TOKEN_3 = os.environ["BOT_TOKEN_3"]
 OPERATOR_ID = int(os.environ.get("OPERATOR_ID", 7137220733))
-PORT = int(os.environ.get("PORT", 8000))
 
 active_chats = {}
 
-# Обработчики (без изменений)
+# ========== ОБРАБОТЧИКИ БОТОВ ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📞 Связаться с оператором", callback_data="operator")]]
     await update.message.reply_text(
@@ -89,23 +89,23 @@ async def run_bots():
     tasks = [app.run_polling() for app in apps]
     await asyncio.gather(*tasks)
 
-async def health_check(request):
-    return web.Response(text="OK")
+# ========== HTTP-СЕРВЕР ДЛЯ RENDER (FLASK) ==========
+app_flask = Flask(__name__)
 
-async def start_http_server():
-    app = web.Application()
-    app.router.add_get('/health', health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-    print(f"HTTP сервер запущен на порту {PORT}")
+@app_flask.route('/')
+@app_flask.route('/health')
+def health():
+    return "OK", 200
 
-async def main():
-    print("Запуск HTTP-сервера и трёх ботов...")
-    http_task = asyncio.create_task(start_http_server())
-    bots_task = asyncio.create_task(run_bots())
-    await asyncio.gather(http_task, bots_task)
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app_flask.run(host='0.0.0.0', port=port, use_reloader=False, threaded=True)
 
+# ========== ЗАПУСК ==========
 if __name__ == "__main__":
-    asyncio.run(main())
+    print("Запуск Flask сервера в потоке...")
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    print("Запуск трёх ботов...")
+    asyncio.run(run_bots())
