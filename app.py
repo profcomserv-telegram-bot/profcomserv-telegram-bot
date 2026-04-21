@@ -49,6 +49,7 @@ async def forward_to_operator(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("✉️ Отправлено оператору. Ожидайте ответа.")
 
 async def forward_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Проверяем, что сообщение пришло от оператора
     if update.effective_user.id != OPERATOR_ID:
         return
     if not update.message or not update.message.text:
@@ -73,7 +74,8 @@ def main():
     app.add_handler(CommandHandler("end", end_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_operator))
-    app.add_handler(MessageHandler(filters.USER(OPERATOR_ID) & filters.TEXT, forward_to_user))
+    # ИСПРАВЛЕННАЯ СТРОКА:
+    app.add_handler(MessageHandler(filters.User(user_id=OPERATOR_ID) & filters.TEXT, forward_to_user))
     print("Бот с оператором запущен...")
     app.run_polling()
 
