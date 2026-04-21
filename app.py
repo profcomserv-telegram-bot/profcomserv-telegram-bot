@@ -18,18 +18,22 @@ def send_message(chat_id, text, token, reply_markup=None):
     if reply_markup:
         payload['reply_markup'] = json.dumps(reply_markup)
     try:
-        requests.post(url, json=payload, timeout=5)
+        r = requests.post(url, json=payload, timeout=5)
+        print(f"Send to {chat_id}: {r.status_code} {r.text[:100]}")
     except Exception as e:
-        print(e)
+        print(f"Send error: {e}")
 
-def process_update(update, token):
+def process_update(update, token, bot_num):
     if not update:
+        print(f"Bot {bot_num}: empty update")
         return
+    print(f"Bot {bot_num} received: {json.dumps(update)[:200]}")
     if 'message' in update:
         msg = update['message']
         chat_id = msg['chat']['id']
         user = msg['chat'].get('username', '')
         text = msg.get('text')
+        print(f"Message from {chat_id}: {text}")
         if text == '/start':
             keyboard = {'inline_keyboard': [[{'text': '📞 Связаться с оператором', 'callback_data': 'operator'}]]}
             send_message(chat_id, 'Привет! Нажми кнопку, чтобы связаться с оператором.', token, keyboard)
@@ -43,9 +47,7 @@ def process_update(update, token):
         user_id = query['from']['id']
         if query['data'] == 'operator':
             active_chats[user_id] = True
-            # Ответ на callback
             requests.post(f"https://api.telegram.org/bot{token}/answerCallbackQuery", json={'callback_query_id': query['id']})
-            # Изменяем текст сообщения
             edit_url = f"https://api.telegram.org/bot{token}/editMessageText"
             payload = {
                 'chat_id': query['message']['chat']['id'],
@@ -57,17 +59,17 @@ def process_update(update, token):
 
 @app.route('/webhook/1', methods=['POST'])
 def webhook1():
-    process_update(request.get_json(), TOKEN1)
+    process_update(request.get_json(), TOKEN1, 1)
     return 'OK', 200
 
 @app.route('/webhook/2', methods=['POST'])
 def webhook2():
-    process_update(request.get_json(), TOKEN2)
+    process_update(request.get_json(), TOKEN2, 2)
     return 'OK', 200
 
 @app.route('/webhook/3', methods=['POST'])
 def webhook3():
-    process_update(request.get_json(), TOKEN3)
+    process_update(request.get_json(), TOKEN3, 3)
     return 'OK', 200
 
 @app.route('/reply', methods=['POST'])
